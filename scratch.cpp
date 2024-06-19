@@ -1,0 +1,641 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#include <string>
+#include <map>
+#include <numeric>
+#include <functional>
+#include <algorithm>
+#include <span>
+#include <chrono>
+#include <memory>
+#include <filesystem>
+#include <cmath>
+#include <tuple>
+#include <utility>
+#include <chrono>
+#include <random>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <future>
+#include <unordered_map>
+
+
+std::vector<std::vector<float>> load_csv(const std::string& file_path) {
+    std::vector<std::vector<float>> data;
+    std::ifstream file(file_path);
+
+    if (file.is_open()) {
+        std::string line;
+        while (std::getline(file, line)) {
+            std::vector<float> row;
+            std::istringstream line_stream(line);
+            std::string cell;
+
+            while (std::getline(line_stream, cell, ',')) {
+                row.push_back(std::stof(cell));
+            }
+
+            data.push_back(row);
+        }
+        file.close();
+    }
+    else {
+        std::cerr << "Unable to open the file: " << file_path << std::endl;
+    }
+    return data;
+}
+
+
+
+class Environment {
+public:
+    //int timesetp_offset = 0;
+    Environment() {}
+
+    Environment(std::vector<float>& prices, std::vector<int>& length_list, int random_index, int offset_init, float gamma_init, int time) {
+        //std::vector<std::vector<float>> price_vec = prices;
+        //std::vector<std::vector<float>> predictions_vec = predictions;
+        prices_v = std::vector<float>(prices.begin(), prices.end());
+        length_list_v = length_list;
+        //std::cout << "after length list" << std::endl;
+        position_history.resize(prices_v.size());
+        cash_history.resize(prices_v.size());
+        total_profit_history.resize(prices_v.size());
+        st_profit_history.resize(prices_v.size());
+        action_history.resize(prices_v.size());
+        w_short = 0.5;
+        w_long = 0.5;
+        offset = offset_init;
+        gamma = gamma_init;
+        time_dim = time;
+        //int timestep_offset = 0;
+        //int buffer = end_of_ep_buffer;
+        //std::vector<int> position_history(prices_v.size());
+        //std::cout << "position history dimensions" << position_history.size() << std::endl;
+        //delete(&price_vec);
+        //delete(*predictions_vec);
+
+    }
+    //step
+    void reset(std::vector<float>& prices, std::vector<int>& length_list) {
+        std::vector<float> prices_v = std::vector<float>(prices.begin(), prices.end());
+        prediction = 0;
+        vec_mean = 0;
+        vec_std = 0;
+        done = false;
+        last_trade_tick = time_dim;
+        current_tick = time_dim;
+        cash = 100000;
+        start_cash = 100000;
+        position = 0;
+        account_value = 0;
+        profit_list.clear();
+        step_reward = 0;
+        total_reward = 0;
+        total_profit = 0;
+        action_taken = 0;
+        past_profit = 0;
+        st_profit = 0;
+        trade = false;
+        //position_history.clear();
+        //std::vector<float> state = torch::zeros(40);
+        std::pair<std::vector<std::vector<float>>, float> temp_pair; // = get_state(20);
+        temp_pair.first = std::vector<std::vector<float>>(time_dim, std::vector<float>(7));
+        temp_pair.second = 0;
+        state = temp_pair.first;
+        price = temp_pair.second;
+        int action = 0;
+        int previous_action = 0;
+        cash_history.clear();
+        cash_history.resize(prices_v.size());
+        total_profit_history.clear();
+        total_profit_history.resize(prices_v.size());
+        st_profit_history.clear();
+        st_profit_history.resize(prices_v.size());
+        position_history.clear();
+        position_history.resize(prices_v.size());
+        action_history.clear();
+        action_history.resize(prices_v.size());
+        sharpe_history = 0;
+        position_penalty_history = 0;
+        weighted_profit_history = 0;
+        total_profit_reward = 0;
+        omega_ratio_history = 0;
+        previous_action_reward = 0;
+        int timestep_offset = 0;
+        float max_reward = 0;
+    }
+
+    void timestep_offset_update(int offset) {
+        timestep_offset += offset + time_dim;
+    }
+    std::vector<std::vector<float>> get_state_env() {
+        return state;
+    }
+
+    int get_timestep_offset() {
+		return timestep_offset;
+	}
+
+    float get_price() {
+        return price;
+    }
+
+    std::vector<int> get_position_history() {
+        return position_history;
+    }
+
+    std::vector<float> get_cash_history() {
+        return cash_history;
+    }
+
+    std::vector<float> get_total_profit_history() {
+        return total_profit_history;
+    }
+
+    float get_step_reward() {
+        return step_reward;
+    }
+
+    float get_previous_action_reward() {
+        return previous_action_reward;
+    }
+
+    float get_total_reward() {
+        return total_reward;
+    }
+
+    float get_total_profit() {
+        return total_profit;
+    }
+
+    int get_position() {
+        return position;
+    }
+
+    float get_account_value() {
+        return account_value;
+    }
+
+    float get_sharpe_history() {
+        return sharpe_history;
+    }
+
+    float get_position_penalty() {
+        return position_penalty_history;
+    }
+
+    float get_weighted_profit_history() {
+        return weighted_profit_history;
+    }
+
+    float get_total_profit_reward() {
+        return total_profit_reward;
+    }
+
+    float get_omega_ratio() {
+        return omega_ratio_history;
+    }
+
+    float get_cash() {
+        return cash;
+    }
+
+    float get_max_reward(){
+        return max_reward;
+    }
+
+    bool step(int action, int timestep, int random_index, int end_of_ep_buffer, bool optimal_action_found, int previous_action, int original_position, float original_cash) {
+        current_tick = timestep;
+        bool ep_buffer_hit = false;
+        int prev_action = previous_action;
+        position = original_position;
+        cash = original_cash;
+        //std::cout << "step action: " << action << std::endl;
+
+        if (binary_search(length_list_v.begin(), length_list_v.end(), current_tick + end_of_ep_buffer)) {
+            bool ep_buffer_hit = true;
+
+            if (position > 0) {
+                cash = cash + (position * price) - (.0035 * abs(position));
+                position = 0;
+                //std::cout << "long close" << std::endl;
+            }
+            else if (position < 0) {
+                cash = cash + (position * price) - (.0035 * abs(position));
+                position = 0;
+                //std::cout << "short close" << std::endl;
+            }
+        }
+
+        //std::cout <<  << std::endl;
+        //std::cout << "step state" << std::endl;
+        price = prices_v[current_tick];
+        //std::cout << "price" << std::endl;
+        past_profit = total_profit;
+        total_profit = ((position * price) + cash) / start_cash;
+        //std::cout << "total profit: " << total_profit << std::endl;
+        st_profit = total_profit - past_profit;
+        st_profit_history[current_tick] = st_profit;
+        //std::cout << "calculate_reward" << std::endl;
+        trade = false;
+        //std::cout << "step action: " << action << std::endl;
+        if ((action > 0 && (price * action) < cash) || (action < 0 && ((position * price) + (action * price) > -100000))) {
+            trade = true;
+            //std::cout << "trade=true" << std::endl;
+        }
+        if (trade == true) {
+            last_trade_tick = current_tick;
+            if (action > 0) {
+                cash = cash - (price * action) - (.0035 * action);
+                position += action;
+                //std::cout << "buy" << std::endl;
+                //std::cout << "position: " << position << std::endl;
+
+            }
+            else if (action < 0) {
+                cash = cash - (price * action) - (.0035 * action);
+                position += action;
+                //std::cout << "sell" << std::endl;
+                //std::cout << "position: " << position << std::endl;
+            }
+        }
+
+        position_history[current_tick] = position;
+        account_value = (position * price) + cash;
+    //std::cout << "price: " << price << " tick: " << current_tick << std::endl;
+        total_profit = account_value / start_cash;
+    //std::cout << "total profit: " << total_profit << std::endl;
+        cash_history[current_tick] = cash;
+        total_profit_history[current_tick] = total_profit;
+        action_history[current_tick] = action;
+
+        if (current_tick == time_dim) {
+            for (int i = 0; i < time_dim; i++) {
+                position_history[i] = 0;
+                cash_history[i] = start_cash;
+            }
+        }
+
+
+
+        //weighted_profit_history[current_tick] = weighted_profit;
+        step_reward = calculate_reward(prev_action, action);
+        //std::cout << "environment step reward: " << step_reward << std::endl;
+        return ep_buffer_hit;
+    }
+
+    float calculate_profit(int current_tick, int n) {
+        int end_tick = current_tick + n;
+        float start_value = (position * price) + cash;
+        //std::cout << "start value: " << start_value << std::endl;
+        float end_value = (position_history[end_tick] * prices_v[end_tick]) + cash_history[end_tick];
+        //std::cout << "position history: " << position_history[start_tick] << std::endl;
+        //std::cout << "prices_v: " << prices_v[start_tick] << std::endl;
+        //std::cout << "cash_history: " << cash_history[start_tick] << std::endl;
+        //std::cout << "end val - start val: " << end_value - start_value << std::endl;
+        //exit(8280);
+        return (end_value - start_value) / start_value;
+    }
+
+
+
+private:
+    std::vector<int> position_history;
+    std::vector<std::vector<float>> state;
+    std::vector<float> predictions_v;
+    std::vector<float> prices_v;
+    std::vector<int> length_list_v;
+    int timestep_offset = 0;
+    float step_reward;
+    float total_profit;
+    bool done;
+    float total_reward;
+    std::tuple<std::vector<float>, float, int, float, float> interim_info;
+    int item;
+    float price;
+    float prediction;
+    float vec_mean;
+    float vec_std;
+    int last_trade_tick;
+    int current_tick;
+    int end_tick = prices_v.size();
+    float start_cash = 100000;
+    float cash = 100000;
+    int position;
+    float account_value;
+    std::vector<float> profit_list;
+    int action_taken;
+    float past_profit;
+    float st_profit;
+    bool trade;
+    int n_short = 5;
+    int n_long = 10;
+    float w_short = .5;
+    float w_long = .5;
+    std::vector<float> cash_history;
+    std::vector<float> total_profit_history;
+    std::vector<float> st_profit_history;
+    std::vector<float> action_history;
+    float sharpe_history;
+    float position_penalty_history;
+    float weighted_profit_history;
+    float total_profit_reward;
+    float omega_ratio_history;
+    float position_penalty;
+    float previous_action_reward;
+    std::pair<std::vector<std::vector<float>>, float> temp_pair;
+    int previous_action;
+    int offset;
+    float gamma;
+    int time_dim;
+    float max_reward;
+    bool find_optimal_action;
+    std::vector<float> possible_actions;
+    bool optimal_action_found = false;
+
+//    int find_max_reward(){
+//        for (int element : possible_actions) {
+//             = calculate_reward(previous_action, element);
+//            if (reward > max_reward){
+//                max_reward = reward;
+//            }
+//        }
+//        return max_reward;
+//    }
+
+    std::vector<float> future_profits(int buffer_len, int position, int current_tick) {
+        std::vector<float> fut_profit(buffer_len);
+        float initial_basis = (position * prices_v[current_tick]) + cash;
+        for (int i = 0; i < buffer_len; ++i) {
+            fut_profit[i] = (5000 * (((position * prices_v[current_tick + i]) + cash) - initial_basis)) / initial_basis;
+            //std::cout << "future profit: " << fut_profit[i] << std::endl;
+        }
+
+        return fut_profit;
+    }
+
+    std::vector<float> future_positions(int buffer_len, int position, int current_tick) {
+        std::vector<float> fut_position(buffer_len);
+        for (int i = current_tick; i < current_tick + buffer_len; ++i) {
+            float position_reward;
+
+            if (position > 50) {
+                position_reward = -.5;
+            }
+            else {
+                position_reward = 0.1;
+            }
+            fut_position[i - current_tick] = position_reward;
+        }
+        return fut_position;
+    }
+
+    float weighted_future_rewards(std::vector<float> unweighted_vector, float gamma) {
+        for (int i = 0; i < unweighted_vector.size(); ++i) {
+            unweighted_vector[i] = unweighted_vector[i] * std::pow(gamma, i);
+            //std::cout << unweighted_vector[i] * std::pow(gamma, i) << std::endl;
+        }
+        return std::accumulate(unweighted_vector.begin(), unweighted_vector.end(), 0.0);
+    }
+
+    float calculate_reward(int previous_action, int action) {
+        //float f_position = position;
+        //std::cout << "calculate reward action: " << action << std::endl;
+        //std::cout << "calculate reward previous action: " << previous_action << std::endl;
+        //std::cout << "calculate reward position: " << position << std::endl;
+        //std::cout << "calculate reward current tick: " << current_tick << std::endl;
+        
+        
+        
+        float step_reward = 0.0;
+        std::vector<float> profit_vec = future_profits(200, position, current_tick);
+        step_reward += weighted_future_rewards(profit_vec, gamma)/200;
+        //std::cout << "weighted future reward: " << weighted_future_rewards(profit_vec, gamma) << std::endl;
+        weighted_profit_history += step_reward;
+        if (abs(position) > 50) {
+            float float_position = abs(float(position));
+            step_reward -= float_position / 100;
+            position_penalty_history -= float_position / 100;
+        }
+        if (action == previous_action && action != 0){
+            step_reward -= 1;
+            //std::cout << "action penalty" << std::endl;
+        }
+        if (action == 0){
+            step_reward -= 0.5;
+        }
+        
+        total_reward += step_reward;
+        //std::cout << "action: " << action << " previous action: " << previous_action << std::endl;
+        //std::cout << "calculate function step reward: " << step_reward << std::endl;
+        return step_reward;
+    }
+
+};
+
+void write_vector_to_csv(const std::vector<float>& data, const std::string& file_name) {
+    std::ofstream output_file(file_name);
+
+    if (!output_file.is_open()) {
+        std::cerr << "Error: Could not open the file." << std::endl;
+        return;
+    }
+
+    for (size_t i = 0; i < data.size(); ++i) {
+        output_file << data[i];
+
+        if (i < data.size() - 1) {
+            output_file << ",";
+        }
+    }
+    output_file.close();
+}
+
+//int random_index_selection(int index_start, int num_steps, int vector_size) {
+//    int seed = std::chrono::system_clock::now().time_since_epoch().count();
+//    srand(seed);
+//    int randomIndex = index_start + (rand() % (vector_size - num_steps - 20));
+//    std::cout << "random index: " << randomIndex << std::endl;
+//    return randomIndex;
+//}
+
+int random_index_selection(int index_start, int num_steps, int vector_size, int time_dim) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> distrib(index_start, vector_size - num_steps - time_dim);
+
+    int randomIndex = distrib(gen);
+    //std::cout << "random index: " << randomIndex << std::endl;
+    return randomIndex;
+}
+
+int random_action_selection(std::vector<int>& actions) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> distrib(0, actions.size() - 1);
+
+    int randomAction = distrib(gen);
+    //std::cout << "random action: " << randomAction << std::endl;
+    return actions[randomAction];
+}
+
+int main() {
+    int end_of_ep_buffer = 200;
+    bool find_optimal_action = true;
+    float gamma = .999;
+
+    //int num_steps = 512;
+    int index_start = 0;
+    int action_scaling = 1;
+
+    std::vector<int> actions{ -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5 };
+
+    for (int i = 0; i < actions.size(); i++) {
+        actions[i] = actions[i] * action_scaling;
+    }
+
+    std::string price_str = "mid_prices.csv";
+    std::string length_list_str = "length_list.csv";
+    std::vector<std::vector<float>> price_vec = load_csv(price_str);
+    std::vector<std::vector<float>> length_list_vec = load_csv(length_list_str);
+    std::vector<float> price_data = price_vec[0];
+    int vector_size = price_data.size();
+    //std::cout << "std::vector size: " << vector_size << std::endl;
+
+    std::vector<int> length_list(length_list_vec.size());
+
+    for (int i = 0; i < length_list_vec.size(); ++i) {
+        length_list[i] = int(length_list_vec[i][0]);
+    }
+    
+    for (int i = 0; i < length_list.size(); ++i){
+        //std::cout << "price data size: " << price_data.size() << std::endl;
+        int price_length = 0;
+        if (i == 0){
+            price_length = length_list[i];
+        }
+        else{
+            price_length = length_list[i]-length_list[i-1];       
+        }
+        Environment env = Environment(price_data, length_list, 0, 0, gamma, price_length);
+        
+        //std::cout << "part 0 done" << std::endl;
+        std::vector<float> positions;
+        std::vector<float> actions_taken;
+        std::vector<float> rewards;
+        std::vector<float> cash_history;
+        //std::cout << "part 1 done" << std::endl;
+        env.reset(price_data, length_list);
+        //std::cout << "part 2 done" << std::endl;
+        int previous_action = 0;
+        for (int timestep = length_list[i]-price_length; timestep < length_list[i]-end_of_ep_buffer; ++timestep){
+            
+            
+            //std::cout << "timestep: " << timestep << std::endl;
+            //std::cout << "action: " << action << std::endl;
+            int action;
+            std::unordered_map<int, float> action_reward_map;
+            int original_position = env.get_position();
+            float original_cash = env.get_cash();
+                
+            if (find_optimal_action==true){
+                
+                for (int element: actions){     
+                    env.step(element, timestep, 0, end_of_ep_buffer, false, previous_action, original_position, original_cash);
+                    action_reward_map[element+5] = env.get_step_reward();
+                    //std::cout << "test: " << element << "env step reward: " << env.get_step_reward() << std::endl;
+                    //std::cout << "position after action: " << env.get_position() << std::endl;
+                    //std::cout << "cash after action: " << env.get_cash() << std::endl;
+                    //std::cout << "total profit after action: " << env.get_total_profit() << std::endl;
+                    
+                }
+                
+                //write a function to find the key of the max value in the unordered map
+                float max_reward = -std::numeric_limits<float>::max();
+                //std::cout << max_reward << std::endl;
+                //exit(27346);
+                int optimal_action = 0;
+                                
+                for (const auto& element: action_reward_map){
+                    //std::cout << element.first << " : " << element.second << std::endl;
+                    if (element.second > max_reward){
+                        //std::cout << element << std::endl;
+                        max_reward = element.second;
+                        //std::cout << "max reward: " << max_reward << std::endl;
+                        optimal_action = element.first;
+                        //std::cout << "optimal action: " << optimal_action << std::endl;
+
+                    }
+                }
+                action = actions[optimal_action];
+                //std::cout << "action map action: " << action << std::endl;
+                env.step(action, timestep, 0, end_of_ep_buffer, true, previous_action, original_position, original_cash);
+                //std::cout << "position after action: " << env.get_position() << std::endl;
+                //std::cout << "cash after action: " << env.get_cash() << std::endl;
+                //std::cout << "price after action:" << env.get_price() << std::endl;
+                //std::cout << "total profit after action: " << env.get_total_profit() << std::endl;
+                previous_action = action;
+                //std::cout << previous_action << std::endl;
+                //std::cout << optimal_action << " : " << max_reward << std::endl;
+            }
+            else{
+                action = random_action_selection(actions);
+                env.step(action, timestep, 0, end_of_ep_buffer, true, previous_action, original_position, original_cash);
+                previous_action = action;
+            }
+
+            //std::cout << "step done" << std::endl;
+            //std::cout << action << std::endl;
+            //std::cout << "position" << env.get_position() << std::endl;
+            //std::cout << env.get_step_reward() << std::endl;
+            //std::cout << "===============" << std::endl;
+            actions_taken.push_back(action);
+            positions.push_back(env.get_position());
+            rewards.push_back(env.get_step_reward());
+            cash_history.push_back(env.get_cash());
+            //if (timestep > 50000){
+            //    std::cout << env.get_total_profit() << std::endl;
+            //    exit(18347);
+
+            //}
+        }
+
+        //std::cout << "day " << i << " done" << std::endl;
+
+        if (find_optimal_action==true){
+            std::string position_str = "/mnt/drive2/shared_data/unmerged_data/csv/positions/positions_day_" + std::to_string(i) + ".csv"; //+ "_max_action" + ".csv";
+            std::string action_str = "/mnt/drive2/shared_data/unmerged_data/csv/actions/actions_day_" + std::to_string(i) + ".csv"; //+ "_max_action" + ".csv";
+            std::string reward_str = "/mnt/drive2/shared_data/unmerged_data/csv/rewards/rewards_day_" + std::to_string(i) + ".csv"; //+ "_max_action" + ".csv";
+            std::string cash_str = "/mnt/drive2/shared_data/unmerged_data/csv/cash/cash_day_" + std::to_string(i) + ".csv";// + "_max_action" + ".csv";
+            write_vector_to_csv(positions, position_str);
+            write_vector_to_csv(actions_taken, action_str);
+            write_vector_to_csv(rewards, reward_str);
+            write_vector_to_csv(cash_history, cash_str);
+            //std::cout << "optimal action found" << std::endl;
+        }
+
+        else{
+            std::string position_str = "positions_day_" + std::to_string(i) + ".csv";
+            std::string action_str = "actions_day_" + std::to_string(i) + ".csv";
+            std::string reward_str = "rewards_day_" + std::to_string(i) + ".csv";
+            std::string cash_str = "cash_day_" + std::to_string(i) + ".csv";
+            write_vector_to_csv(positions, position_str);
+            write_vector_to_csv(actions_taken, action_str);
+            write_vector_to_csv(rewards, reward_str);
+            write_vector_to_csv(cash_history, cash_str);    
+        }
+
+        std::cout << "day " << i << " profit: " << (env.get_total_profit()-1)*100 << "%" << std::endl;
+
+        //if (i > 4){
+        //    exit(17364);
+        //}
+    }
+
+    return 0;
+}

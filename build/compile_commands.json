@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/qhawkins/c++_projects/rl_dataset_creator/build",
+  "command": "/usr/bin/g++ -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -isystem /home/libtorch/include -isystem /home/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.1/include  -D_GLIBCXX_USE_CXX11_ABI=1 -g -D_GLIBCXX_USE_CXX11_ABI=1 -o CMakeFiles/rl_dataset_creator.dir/rl_dataset_creator.cpp.o -c /home/qhawkins/c++_projects/rl_dataset_creator/rl_dataset_creator.cpp",
+  "file": "/home/qhawkins/c++_projects/rl_dataset_creator/rl_dataset_creator.cpp"
+}
+]

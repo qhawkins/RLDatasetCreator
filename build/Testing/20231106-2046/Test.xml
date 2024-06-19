@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Site BuildName="Linux-c++"
+	BuildStamp="20231106-2046-Experimental"
+	Name="workstation"
+	Generator="ctest-3.22.1"
+	CompilerName="/usr/bin/c++"
+	CompilerVersion="11.4.0"
+	OSName="Linux"
+	Hostname="workstation"
+	OSRelease="6.2.0-36-generic"
+	OSVersion="#37~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Mon Oct  9 15:34:04 UTC 2"
+	OSPlatform="x86_64"
+	Is64Bits="1"
+	VendorString="AuthenticAMD"
+	VendorID="Advanced Micro Devices"
+	FamilyID="23"
+	ModelID="49"
+	ProcessorCacheSize="512"
+	NumberOfLogicalCPU="16"
+	NumberOfPhysicalCPU="8"
+	TotalVirtualMemory="526335"
+	TotalPhysicalMemory="515654"
+	LogicalProcessorsPerPhysical="2"
+	ProcessorClockFrequency="2950.34"
+	>
+	<Testing>
+		<StartDateTime>Nov 06 15:46 EST</StartDateTime>
+		<StartTestTime>1699303597</StartTestTime>
+		<TestList/>
+		<EndDateTime>Nov 06 15:46 EST</EndDateTime>
+		<EndTestTime>1699303597</EndTestTime>
+		<ElapsedMinutes>0</ElapsedMinutes>
+	</Testing>
+</Site>
