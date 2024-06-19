@@ -417,7 +417,6 @@ private:
         return std::accumulate(unweighted_vector.begin(), unweighted_vector.end(), 0.0);
     }
     
-    //write a function that returns a sharpe ratio for a given vector of profits and the risk free rate
     float sharpe_ratio(std::vector<float> profit_vec, float risk_free_rate){
         float mean = std::accumulate(profit_vec.begin(), profit_vec.end(), 0.0)/profit_vec.size();
         float std = 0;
@@ -613,7 +612,6 @@ int main() {
                     
                 }
                 
-                //write a function to find the key of the max value in the unordered map
                 float max_reward = -std::numeric_limits<float>::max();
                 //std::cout << max_reward << std::endl;
                 //exit(27346);
